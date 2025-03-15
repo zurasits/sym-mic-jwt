@@ -3,7 +3,6 @@
 namespace App\Controller;
 
 use App\Entity\User;
-use Lexik\Bundle\JWTAuthenticationBundle\Exception\JWTDecodeFailureException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -14,9 +13,9 @@ use Doctrine\ORM\EntityManagerInterface;
 
 class LoginController extends AbstractController
 {
-    private $jwtManager;
-    private $passwordHasher;
-    private $entityManager;
+    private JWTTokenManagerInterface $jwtManager;
+    private UserPasswordHasherInterface $passwordHasher;
+    private EntityManagerInterface $entityManager;
 
     public function __construct(
         JWTTokenManagerInterface $jwtManager,

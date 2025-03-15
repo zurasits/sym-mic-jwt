@@ -12,9 +12,9 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final class RegistrationController extends AbstractController
 {
-    private $entityManager;
-    private $passwordHasher;
-    private $validator;
+    private EntityManagerInterface $entityManager;
+    private UserPasswordHasherInterface $passwordHasher;
+    private ValidatorInterface $validator;
 
     public function __construct(
         EntityManagerInterface $entityManager,

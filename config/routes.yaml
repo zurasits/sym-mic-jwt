@@ -18,6 +18,11 @@ api_login:
     controller: App\Controller\LoginController::login
     methods:    POST
 
+api_refresh_token:
+    path:       /api/refresh-token
+    controller: App\Controller\RefreshTokenController::refreshToken
+    methods:    POST
+
 api_protected:
     path:       /api/protected
     controller: App\Controller\LoginController::protected
