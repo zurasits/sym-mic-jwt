@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\User;
+use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,10 +19,11 @@ class LoginController extends AbstractController
     private EntityManagerInterface $entityManager;
 
     public function __construct(
-        JWTTokenManagerInterface $jwtManager,
+        JWTTokenManagerInterface    $jwtManager,
         UserPasswordHasherInterface $passwordHasher,
-        EntityManagerInterface $entityManager
-    ) {
+        EntityManagerInterface      $entityManager
+    )
+    {
         $this->jwtManager = $jwtManager;
         $this->passwordHasher = $passwordHasher;
         $this->entityManager = $entityManager;
@@ -42,14 +44,18 @@ class LoginController extends AbstractController
         $user = $this->entityManager->getRepository(User::class)->findOneBy(['email' => $data['email']]);
 
         if (!$user || !$this->passwordHasher->isPasswordValid($user, $data['password'])) {
-            throw new BadCredentialsException('Invalid credentials');
+            return new JsonResponse(['error' => 'Invalid credentials'], 401);
         }
 
+        try {
             $token = $this->jwtManager->create($user);
+        }catch (Exception $e) {
+            return new JsonResponse(['error' => 'JWT Token could not be created'], 500);
+        }
 
-            return new JsonResponse([
-                'token' => $token,
-            ]);
+        return new JsonResponse([
+            'token' => $token
+        ]);
     }
 
 
