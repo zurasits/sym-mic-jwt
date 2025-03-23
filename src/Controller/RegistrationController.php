@@ -16,6 +16,11 @@ final class RegistrationController extends AbstractController
     private UserPasswordHasherInterface $passwordHasher;
     private ValidatorInterface $validator;
 
+    /**
+     * @param EntityManagerInterface $entityManager
+     * @param UserPasswordHasherInterface $passwordHasher
+     * @param ValidatorInterface $validator
+     */
     public function __construct(
         EntityManagerInterface $entityManager,
         UserPasswordHasherInterface $passwordHasher,
@@ -26,15 +31,23 @@ final class RegistrationController extends AbstractController
         $this->validator = $validator;
     }
 
-
+    /**
+     * @param Request $request
+     * @return JsonResponse
+     */
     public function register(Request $request): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
+
+        if ($data === null) {
+            return new JsonResponse(['error' => 'Invalid JSON data'], 400);
+        }
 
         if (!isset($data['email']) || !isset($data['password'])) {
             return new JsonResponse(['error' => 'Email and password are required'], 400);
         }
 
+        // Rest des Codes bleibt gleich
         $user = new User();
         $user->setEmail($data['email']);
         $user->setRoles(['ROLE_USER']);
