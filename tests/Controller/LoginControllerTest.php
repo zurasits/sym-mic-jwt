@@ -2,118 +2,198 @@
 
 namespace App\Tests\Controller;
 
+use App\Controller\LoginController;
 use App\Entity\User;
-use App\Kernel;
-use Doctrine\ORM\EntityManagerInterface as EntityManagerInterfaceAlias;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\EntityRepository;
+use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Symfony\Component\PasswordHasher\PasswordHasherInterface as PasswordHasherInterfaceAlias;
-use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
-use Symfony\Contracts\HttpClient\Exception\RedirectionExceptionInterface;
-use Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface;
-use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
-use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
-
-final class LoginControllerTest extends KernelTestCase
+class LoginControllerTest extends KernelTestCase
 {
-
-    private $entityManagerMock;
-    private $passwordHasherMock;
-    private HttpClientInterface $client;
+    private $entityManager;
+    private $passwordHasher;
+    private $jwtManager;
 
     protected function setUp(): void
     {
-
-        $this->entityManagerMock = $this->createMock(EntityManagerInterfaceAlias::class);
-        $this->passwordHasherMock = $this->createMock(PasswordHasherInterfaceAlias::class);
         self::bootKernel();
-        $container = self::getContainer();
-        /** @var ?HttpClientInterface $httpClient */
-        $httpClient = $container->get(HttpClientInterface::class);
-        $this->client = $httpClient;
+        $this->entityManager = $this->createMock(EntityManagerInterface::class);
+        $this->passwordHasher = $this->createMock(UserPasswordHasherInterface::class);
+        $this->jwtManager = $this->createMock(JWTTokenManagerInterface::class);
     }
 
-
-    /**
-     * @throws TransportExceptionInterface
-     * @throws ServerExceptionInterface
-     * @throws RedirectionExceptionInterface
-     * @throws ClientExceptionInterface
-     */
     public function testValidLogin(): void
     {
+        $requestData = ['email' => 'test@example.com', 'password' => 'password123'];
+        $request = new Request([], [], [], [], [], [], json_encode($requestData));
 
+        $user = new User();
+        $user->setEmail($requestData['email']);
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects($this->once())
+            ->method('findOneBy')
+            ->with(['email' => $requestData['email']])
+            ->willReturn($user);
 
+        $this->entityManager->expects($this->once())
+            ->method('getRepository')
+            ->with(User::class)
+            ->willReturn($repository);
 
-        $email = 'zurasits@gmail.com';
-        $password = 'test.1977';
+        $this->passwordHasher->expects($this->once())
+            ->method('isPasswordValid')
+            ->with($user, $requestData['password'])
+            ->willReturn(true);
 
+        $token = 'mock.jwt.token';
+        $this->jwtManager->expects($this->once())
+            ->method('create')
+            ->with($user)
+            ->willReturn($token);
 
-        $response = $this->client->request(
-            'POST',
-            'https://sym-mic-jwt.ddev.site/api/login',
-            [
-                'headers' => ['Content-Type' => 'application/json'],
-                'body' => json_encode(['email' => $email, 'password' => $password])
-            ]
-        );
+        $controller = new LoginController($this->jwtManager, $this->passwordHasher, $this->entityManager);
+        $response = $controller->login($request);
 
-
+        $this->assertInstanceOf(JsonResponse::class, $response);
         $this->assertEquals(200, $response->getStatusCode());
-        $response = json_decode($response->getContent(), true);
-        $this->assertArrayHasKey('token', $response);
-        $this->assertNotEmpty($response['token']);
-
+        $responseData = json_decode($response->getContent(), true);
+        $this->assertArrayHasKey('token', $responseData);
+        $this->assertEquals($token, $responseData['token']);
     }
 
-
-    /**
-     * @dataProvider loginDataProvider
-     * @param $email
-     * @param $password
-     * @param $expectedStatusCode
-     * @param null $error
-     * @throws ClientExceptionInterface
-     * @throws RedirectionExceptionInterface
-     * @throws ServerExceptionInterface
-     * @throws TransportExceptionInterface
-     */
-    public function testInvalidLogin($email, $password, $expectedStatusCode, $error = null): void
+    public function testLoginMissingFields(): void
     {
-        $this->expectException(\Symfony\Component\HttpClient\Exception\ClientException::class);
-        $response = $this->client->request(
-            'POST',
-            'https://sym-mic-jwt.ddev.site/api/login',
-            [
-                'headers' => ['Content-Type' => 'application/json'],
-                'body' => json_encode(['email' => $email, 'password' => $password])
-            ]
-        );
+        $requestData = ['password' => 'password123']; // Kein Email
+        $request = new Request([], [], [], [], [], [], json_encode($requestData));
 
-        $this->assertEquals($expectedStatusCode, $response->getStatusCode());
-        $responseArray = json_decode($response->getContent(), true);
+        $controller = new LoginController($this->jwtManager, $this->passwordHasher, $this->entityManager);
+        $response = $controller->login($request);
 
-        $this->assertArrayHasKey('error', $responseArray);
-        $this->assertEquals($error, $responseArray['error']);
+        $this->assertInstanceOf(JsonResponse::class, $response);
+        $this->assertEquals(400, $response->getStatusCode());
+        $responseData = json_decode($response->getContent(), true);
+        $this->assertArrayHasKey('error', $responseData);
+        $this->assertEquals('Email and password are required', $responseData['error']);
 
-
+        $this->entityManager->expects($this->never())->method('getRepository');
     }
 
-    public function loginDataProvider(): array
+    public function testLoginInvalidCredentials(): void
     {
-        return [
-            // Test 1: Email und Passwort fehlen
-            ['email' => null, 'password' => null, 'expectedStatusCode' => 400, 'error' => 'Email and password are required'],
-            ['email' => null, 'password' => 1234, 'expectedStatusCode' => 400, 'error' => 'Email and password are required'],
-            ['email' => 'zurasits@gmail.com', 'password' => null, 'expectedStatusCode' => 400, 'error' => 'Email and password are required'],
-            // Test 2: wrong data
-            ['email' => 'zurasits@gmail.com', 'password' => 'wrongpassword', 'expectedStatusCode' => 401, 'error' => 'Invalid credentials'],
-            ['email' => 'wrong@email.com', 'password' => 'test.1977', 'expectedStatusCode' => 401, 'error' => 'Invalid credentials'],
+        $requestData = ['email' => 'test@example.com', 'password' => 'wrongpass'];
+        $request = new Request([], [], [], [], [], [], json_encode($requestData));
 
-            // Test 5: Fehler bei der Token-Erstellung (Simuliert einen Fehler)
-            // ('email' => 'zurasits@gmail.com', 'password' => 'test.1977', 'expectedStatusCode' => 500, 'expectedError' => 'JWT Token could not be created'),
-        ];
+        $user = new User();
+        $user->setEmail($requestData['email']);
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects($this->once())
+            ->method('findOneBy')
+            ->with(['email' => $requestData['email']])
+            ->willReturn($user);
+
+        $this->entityManager->expects($this->once())
+            ->method('getRepository')
+            ->with(User::class)
+            ->willReturn($repository);
+
+        $this->passwordHasher->expects($this->once())
+            ->method('isPasswordValid')
+            ->with($user, $requestData['password'])
+            ->willReturn(false);
+
+        $controller = new LoginController($this->jwtManager, $this->passwordHasher, $this->entityManager);
+        $response = $controller->login($request);
+
+        $this->assertInstanceOf(JsonResponse::class, $response);
+        $this->assertEquals(401, $response->getStatusCode());
+        $responseData = json_decode($response->getContent(), true);
+        $this->assertArrayHasKey('error', $responseData);
+        $this->assertEquals('Invalid credentials', $responseData['error']);
+
+        $this->jwtManager->expects($this->never())->method('create');
     }
 
+    public function testLoginUserNotFound(): void
+    {
+        $requestData = ['email' => 'nonexistent@example.com', 'password' => 'password123'];
+        $request = new Request([], [], [], [], [], [], json_encode($requestData));
 
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects($this->once())
+            ->method('findOneBy')
+            ->with(['email' => $requestData['email']])
+            ->willReturn(null);
+
+        $this->entityManager->expects($this->once())
+            ->method('getRepository')
+            ->with(User::class)
+            ->willReturn($repository);
+
+        $controller = new LoginController($this->jwtManager, $this->passwordHasher, $this->entityManager);
+        $response = $controller->login($request);
+
+        $this->assertInstanceOf(JsonResponse::class, $response);
+        $this->assertEquals(401, $response->getStatusCode());
+        $responseData = json_decode($response->getContent(), true);
+        $this->assertArrayHasKey('error', $responseData);
+        $this->assertEquals('Invalid credentials', $responseData['error']);
+
+        $this->passwordHasher->expects($this->never())->method('isPasswordValid');
+    }
+
+    public function testLoginJwtTokenCreationFailure(): void
+    {
+        $requestData = ['email' => 'test@example.com', 'password' => 'password123'];
+        $request = new Request([], [], [], [], [], [], json_encode($requestData));
+
+        $user = new User();
+        $user->setEmail($requestData['email']);
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects($this->once())
+            ->method('findOneBy')
+            ->with(['email' => $requestData['email']])
+            ->willReturn($user);
+
+        $this->entityManager->expects($this->once())
+            ->method('getRepository')
+            ->with(User::class)
+            ->willReturn($repository);
+
+        $this->passwordHasher->expects($this->once())
+            ->method('isPasswordValid')
+            ->with($user, $requestData['password'])
+            ->willReturn(true);
+
+        $this->jwtManager->expects($this->once())
+            ->method('create')
+            ->with($user)
+            ->willThrowException(new \Exception('JWT creation failed'));
+
+        $controller = new LoginController($this->jwtManager, $this->passwordHasher, $this->entityManager);
+        $response = $controller->login($request);
+
+        $this->assertInstanceOf(JsonResponse::class, $response);
+        $this->assertEquals(500, $response->getStatusCode());
+        $responseData = json_decode($response->getContent(), true);
+        $this->assertArrayHasKey('error', $responseData);
+        $this->assertEquals('JWT Token could not be created', $responseData['error']);
+    }
+
+    public function testLoginInvalidJson(): void
+    {
+        $request = new Request([], [], [], [], [], [], '{invalid json');
+
+        $controller = new LoginController($this->jwtManager, $this->passwordHasher, $this->entityManager);
+        $response = $controller->login($request);
+
+        $this->assertInstanceOf(JsonResponse::class, $response);
+        $this->assertEquals(400, $response->getStatusCode());
+        $responseData = json_decode($response->getContent(), true);
+        $this->assertArrayHasKey('error', $responseData);
+        $this->assertEquals('Invalid JSON data', $responseData['error']);
+    }
 }

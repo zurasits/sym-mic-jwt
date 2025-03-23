@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use Exception;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -26,7 +27,11 @@ class RefreshTokenController extends AbstractController
             return new JsonResponse(['error' => 'Invalid user'], 401);
         }
 
-        $newToken = $this->jwtManager->create($user);
+        try {
+            $newToken = $this->jwtManager->create($user);
+        } catch (Exception) {
+            return new JsonResponse(['error' => 'Could not refresh token'], 500);
+        }
 
         return new JsonResponse(['refresh-token' => $newToken]);
     }

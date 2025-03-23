@@ -7,7 +7,6 @@ use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -18,6 +17,11 @@ class LoginController extends AbstractController
     private UserPasswordHasherInterface $passwordHasher;
     private EntityManagerInterface $entityManager;
 
+    /**
+     * @param JWTTokenManagerInterface $jwtManager
+     * @param UserPasswordHasherInterface $passwordHasher
+     * @param EntityManagerInterface $entityManager
+     */
     public function __construct(
         JWTTokenManagerInterface    $jwtManager,
         UserPasswordHasherInterface $passwordHasher,
@@ -37,6 +41,10 @@ class LoginController extends AbstractController
     {
         $data = json_decode($request->getContent(), true);
 
+        if ($data === null) {
+            return new JsonResponse(['error' => 'Invalid JSON data'], 400);
+        }
+
         if (!isset($data['email']) || !isset($data['password'])) {
             return new JsonResponse(['error' => 'Email and password are required'], 400);
         }
@@ -49,26 +57,11 @@ class LoginController extends AbstractController
 
         try {
             $token = $this->jwtManager->create($user);
-        }catch (Exception $e) {
+        } catch (Exception) {
             return new JsonResponse(['error' => 'JWT Token could not be created'], 500);
         }
 
-        return new JsonResponse([
-            'token' => $token
-        ]);
+        return new JsonResponse(['token' => $token]);
     }
 
-
-    public function protected(): JsonResponse
-    {
-        $user = $this->getUser();
-
-        return new JsonResponse([
-            'message' => 'You are authenticated',
-            'user' => [
-                'email' => $user->getUserIdentifier(),
-                'roles' => $user->getRoles(),
-            ],
-        ]);
-    }
 }
